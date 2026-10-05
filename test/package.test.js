@@ -64,3 +64,59 @@ test("reports pipelining support based on presence of pipeline_url", () => {
   assert.equal(withPipeline.supportsPipelining, true)
   assert.equal(withPipeline.pipelineUrl, "https://api.example.com/pipeline")
 })
+
+test("reads flags from the spec's flags array", () => {
+  const pkg = Package.fromObject({
+    base_url: "https://api.example.com/",
+    endpoints: [
+      {
+        name: "find-user",
+        returns: "object.user",
+        flags: ["paginated", "bearer_auth", "capture_bearer"],
+        arguments: [{ name: "id", type: "string", flags: ["required"] }],
+      },
+    ],
+    objects: [{ name: "user", attributes: [{ name: "email", type: "string", flags: ["nullable"] }] }],
+  })
+  const endpoint = pkg.endpoint("find-user")
+  assert.deepEqual(endpoint.flags, ["paginated", "bearer_auth", "capture_bearer"])
+  assert.equal(endpoint.paginated, true)
+  assert.equal(endpoint.bearerAuth, true)
+  assert.equal(endpoint.captureBearer, true)
+  assert.equal(endpoint.argument("id").required, true)
+  assert.equal(endpoint.argument("id").optional, false)
+  assert.equal(pkg.object("user", { context: "attributes" }).attributes[0].nullable, true)
+})
+
+test("reports the private flag on endpoints, arguments, and attributes", () => {
+  const pkg = Package.fromObject({
+    base_url: "https://api.example.com/",
+    endpoints: [
+      { name: "internal-sync", returns: "boolean", flags: ["private"], arguments: [] },
+      {
+        name: "find-user",
+        returns: "object.user",
+        arguments: [
+          { name: "id", type: "string", flags: ["required"] },
+          { name: "debug", type: "boolean", flags: ["private"] },
+        ],
+      },
+    ],
+    objects: [
+      {
+        name: "user",
+        attributes: [
+          { name: "email", type: "string" },
+          { name: "audit_ref", type: "string", flags: ["private"] },
+        ],
+      },
+    ],
+  })
+  assert.equal(pkg.endpoint("internal-sync").private, true)
+  assert.equal(pkg.endpoint("find-user").private, false)
+  assert.equal(pkg.endpoint("find-user").argument("id").private, false)
+  assert.equal(pkg.endpoint("find-user").argument("debug").private, true)
+  const [email, auditRef] = pkg.object("user", { context: "attributes" }).attributes
+  assert.equal(email.private, false)
+  assert.equal(auditRef.private, true)
+})

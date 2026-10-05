@@ -9,11 +9,20 @@ export function normalizeName(name) {
   return String(name).replace(/[-_]/g, "").toLowerCase()
 }
 
+/**
+ * A flag is set when it appears in the spec's `flags` array. The bare boolean
+ * key (e.g. `required: true`) is still honored as a fallback.
+ */
+function hasFlag(raw, flag) {
+  return (raw.flags ?? []).includes(flag) || Boolean(raw[flag])
+}
+
 export class Argument {
   constructor(raw) {
     this.name = raw.name
     this.type = Type.parse(raw.type ?? null)
-    this.required = Boolean(raw.required)
+    this.flags = raw.flags ?? []
+    this.required = hasFlag(raw, "required")
     this.choices = raw.choices ?? []
     this.docs = raw.docs ?? ""
   }
@@ -21,14 +30,23 @@ export class Argument {
   get optional() {
     return !this.required
   }
+
+  get private() {
+    return this.flags.includes("private")
+  }
 }
 
 export class Attribute {
   constructor(raw) {
     this.name = raw.name
     this.type = Type.parse(raw.type ?? null)
-    this.nullable = Boolean(raw.nullable)
+    this.flags = raw.flags ?? []
+    this.nullable = hasFlag(raw, "nullable")
     this.values = raw.values ?? []
+  }
+
+  get private() {
+    return this.flags.includes("private")
   }
 }
 
@@ -66,12 +84,17 @@ export class Endpoint {
     this.docs = raw.docs ?? ""
     this.returns = Type.parse(raw.returns ?? null)
     this.group = raw.group ?? null
-    this.paginated = Boolean(raw.paginated)
-    this.bearerAuth = Boolean(raw.bearer_auth)
-    this.captureBearer = Boolean(raw.capture_bearer)
+    this.flags = raw.flags ?? []
+    this.paginated = hasFlag(raw, "paginated")
+    this.bearerAuth = hasFlag(raw, "bearer_auth")
+    this.captureBearer = hasFlag(raw, "capture_bearer")
     this._rawArguments = raw.arguments ?? []
     this._rawErrors = raw.errors ?? []
     this._client = null
+  }
+
+  get private() {
+    return this.flags.includes("private")
   }
 
   get arguments() {
