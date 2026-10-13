@@ -160,6 +160,13 @@ and unions (`A | B`). String refinements: `date`, `time`, `datetime`, `uuid`,
 `base64`, `email`, `phone`, `url`, `uri`, `ipv4`, `ipv6`, `hostname`. Number
 refinements: `u32`, `u64`, `i32`, `i64`, `f32`, `f64`, `timestamp`.
 
+A generic object (an object definition using the type parameter `T`) is applied
+to a type as `{ "object.list": "object.user" }`, which reads as
+`object.list<object.user>`. The client doesn't resolve generics itself:
+`type.objects` lists both the generic and the objects in its argument, an
+unresolved `T` reads as `any`, and a malformed application becomes `any`
+rather than throwing.
+
 > Refinement validation (`type.valid(...)`) is a pragmatic best-effort check,
 > not a spec-grade validator — good for catching obviously-wrong values, not
 > a replacement for server-side validation.

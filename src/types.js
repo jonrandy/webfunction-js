@@ -8,6 +8,8 @@
  *   - "array"                   -> array<any>
  *   - [t1, t2, ...] (top-level) -> union of t1 | t2 | ...
  *   - [[t]] (nested array)      -> array<t>
+ *   - { "object.list": t }      -> a generic object applied to a type (list<t>)
+ *   - "T"                       -> any (an unresolved generic type parameter)
  */
 
 const STRING_REFINEMENTS = new Set(["date", "time", "datetime", "uuid", "base64", "email", "phone", "url", "uri", "ipv4", "ipv6", "hostname"])
@@ -62,12 +64,14 @@ function parseNode(value) {
     if (value.length === 1 && Array.isArray(value[0])) {
       return { kind: "array", of: parseNode(value[0]) }
     }
-    // Any other top-level array is a union of its parsed elements.
-    return { kind: "union", options: value.map(parseNode) }
+    // Any other top-level array is a union of its parsed elements. A nested array
+    // element is an array type: ["string"] inside a union means array<string>.
+    return { kind: "union", options: value.map(v => (Array.isArray(v) ? { kind: "array", of: parseNode(v) } : parseNode(v))) }
   }
 
   if (typeof value === "string") {
     if (value === "array") return { kind: "array", of: { kind: "any" } }
+    if (value === "T") return { kind: "any" }
 
     const [base, refinement] = value.split(".")
 
@@ -78,7 +82,25 @@ function parseNode(value) {
     return { kind: base, refinement: refinement ?? null }
   }
 
+  if (typeof value === "object") return parseApplication(value)
+
   throw new TypeError(`Cannot parse Web Function type: ${JSON.stringify(value)}`)
+}
+
+/**
+ * Parses a generic application, { "object.<name>": <type> }. Anything that isn't
+ * exactly that shape resolves to "any" rather than throwing, so a package using
+ * generics (even incorrectly) still loads.
+ */
+function parseApplication(value) {
+  const keys = Object.keys(value)
+  if (keys.length !== 1 || !keys[0].startsWith("object.") || keys[0] === "object.") return { kind: "any" }
+
+  try {
+    return { kind: "object", ref: keys[0].slice("object.".length), arg: parseNode(value[keys[0]]) }
+  } catch {
+    return { kind: "any" }
+  }
 }
 
 function nodeToString(node) {
@@ -90,7 +112,8 @@ function nodeToString(node) {
     case "array":
       return `array<${nodeToString(node.of)}>`
     case "object":
-      return node.ref ? `object.${node.ref}` : "object"
+      if (!node.ref) return "object"
+      return node.arg ? `object.${node.ref}<${nodeToString(node.arg)}>` : `object.${node.ref}`
     case "string":
     case "number":
       return node.refinement ? `${node.kind}.${node.refinement}` : node.kind
@@ -108,6 +131,7 @@ function nodeCompact(node) {
 
 function collectObjects(node, found) {
   if (node.kind === "object" && node.ref) found.add(node.ref)
+  if (node.kind === "object" && node.arg) collectObjects(node.arg, found)
   if (node.kind === "union") node.options.forEach(n => collectObjects(n, found))
   if (node.kind === "array") collectObjects(node.of, found)
 }

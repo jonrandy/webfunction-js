@@ -120,3 +120,31 @@ test("reports the private flag on endpoints, arguments, and attributes", () => {
   assert.equal(email.private, false)
   assert.equal(auditRef.private, true)
 })
+
+test("loads a package that uses generics", () => {
+  const pkg = Package.fromObject({
+    base_url: "https://api.example.com/",
+    endpoints: [
+      {
+        name: "list-users",
+        returns: { "object.list": "object.user" },
+        arguments: [{ name: "filter", type: [{ "object.pair": "string" }, "null"] }],
+      },
+      { name: "broken", returns: {}, arguments: [] },
+    ],
+    objects: [
+      {
+        name: "list",
+        attributes: [
+          { name: "total", type: "number" },
+          { name: "items", type: [["T"]] },
+        ],
+      },
+    ],
+  })
+  const ep = pkg.endpoint("list-users")
+  assert.equal(ep.returns.toString(), "object.list<object.user>")
+  assert.equal(ep.argument("filter").type.toString(), "object.pair<string> | null")
+  assert.equal(pkg.endpoint("broken").returns.toString(), "any")
+  assert.equal(pkg.object("list").attributes[1].type.toString(), "array<any>")
+})
