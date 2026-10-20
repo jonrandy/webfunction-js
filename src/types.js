@@ -6,8 +6,9 @@
  *   - "string.email"            -> a base type with a refinement
  *   - "object.user"             -> a reference to a named object schema
  *   - "array"                   -> array<any>
- *   - [t1, t2, ...] (top-level) -> union of t1 | t2 | ...
+ *   - [t1, t2, ...] (top-level) -> union of t1 | t2 | ... (a union of one entry is that entry)
  *   - [[t]] (nested array)      -> array<t>
+ *   - { "array": t }            -> array<t> (the same as [[t]])
  *   - { "object.list": t }      -> a generic object applied to a type (list<t>)
  *   - "T"                       -> any (an unresolved generic type parameter)
  */
@@ -66,7 +67,9 @@ function parseNode(value) {
     }
     // Any other top-level array is a union of its parsed elements. A nested array
     // element is an array type: ["string"] inside a union means array<string>.
-    return { kind: "union", options: value.map(v => (Array.isArray(v) ? { kind: "array", of: parseNode(v) } : parseNode(v))) }
+    const options = value.map(v => (Array.isArray(v) ? { kind: "array", of: parseNode(v) } : parseNode(v)))
+    // A union of one entry is that entry.
+    return options.length === 1 ? options[0] : { kind: "union", options }
   }
 
   if (typeof value === "string") {
@@ -88,12 +91,21 @@ function parseNode(value) {
 }
 
 /**
- * Parses a generic application, { "object.<name>": <type> }. Anything that isn't
- * exactly that shape resolves to "any" rather than throwing, so a package using
- * generics (even incorrectly) still loads.
+ * Parses a type application: a generic object applied to a type,
+ * { "object.<name>": <type> }, or an array of a type, { "array": <type> } (the
+ * same as [[<type>]]). Anything that isn't exactly one of those shapes resolves
+ * to "any" rather than throwing, so a package using generics (even incorrectly)
+ * still loads.
  */
 function parseApplication(value) {
   const keys = Object.keys(value)
+  if (keys.length === 1 && keys[0] === "array") {
+    try {
+      return { kind: "array", of: parseNode(value.array) }
+    } catch {
+      return { kind: "any" }
+    }
+  }
   if (keys.length !== 1 || !keys[0].startsWith("object.") || keys[0] === "object.") return { kind: "any" }
 
   try {

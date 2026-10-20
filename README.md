@@ -162,7 +162,9 @@ refinements: `u32`, `u64`, `i32`, `i64`, `f32`, `f64`, `timestamp`.
 
 A generic object (an object definition using the type parameter `T`) is applied
 to a type as `{ "object.list": "object.user" }`, which reads as
-`object.list<object.user>`. The client doesn't resolve generics itself:
+`object.list<object.user>`. An array of a type can be written `{ "array": "object.user" }`,
+which reads as `array<object.user>` and is the same as `[["object.user"]]`; a union
+of one entry is that entry. The client doesn't resolve generics itself:
 `type.objects` lists both the generic and the objects in its argument, an
 unresolved `T` reads as `any`, and a malformed application becomes `any`
 rather than throwing.

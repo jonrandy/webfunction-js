@@ -110,3 +110,91 @@ test("the unresolved type parameter T resolves to any", () => {
   // Only the bare token: an object named T is an ordinary reference.
   assert.equal(Type.parse("object.T").toString(), "object.T")
 })
+
+// { "array": X } is the canonical way to write an array of X (spec: Generics,
+// Application). It must behave exactly like the legacy [[X]] form.
+test("an array application parses like the legacy nested-array form", () => {
+  const pairs = [
+    [{ array: "string" }, [["string"]]],
+    [{ array: "object.user" }, [["object.user"]]],
+    [{ array: ["string", "null"] }, [["string", "null"]]],
+    [{ array: "T" }, [["T"]]],
+    [{ array: { array: "string" } }, [[["string"]]]],
+    [{ array: { "object.page": "object.user" } }, [[{ "object.page": "object.user" }]]],
+    [{ "object.page": { array: "object.user" } }, { "object.page": [["object.user"]] }],
+    [
+      [{ array: "string" }, "null"],
+      [["string"], "null"],
+    ],
+  ]
+  for (const [application, legacy] of pairs) {
+    const a = Type.parse(application)
+    const l = Type.parse(legacy)
+    assert.equal(a.toString(), l.toString(), JSON.stringify(application))
+    assert.equal(a.format("base"), l.format("base"), JSON.stringify(application))
+    assert.equal(a.format("compact"), l.format("compact"), JSON.stringify(application))
+    assert.deepEqual(a.objects, l.objects, JSON.stringify(application))
+  }
+})
+
+test("formats array applications", () => {
+  assert.equal(Type.parse({ array: "string" }).toString(), "array<string>")
+  assert.equal(Type.parse({ array: "object.user" }).toString(), "array<object.user>")
+  assert.equal(Type.parse({ array: ["string", "number"] }).toString(), "array<string | number>")
+  assert.equal(Type.parse({ array: { array: "string" } }).toString(), "array<array<string>>")
+  assert.equal(Type.parse({ array: { "object.page": "object.user" } }).toString(), "array<object.page<object.user>>")
+  assert.equal(Type.parse({ "object.page": { array: "object.user" } }).toString(), "object.page<array<object.user>>")
+  assert.equal(Type.parse({ array: "T" }).toString(), "array<any>")
+  assert.equal(Type.parse([{ array: "string" }, "null"]).toString(), "array<string> | null")
+  assert.equal(Type.parse(["array", { array: "string" }]).toString(), "array<any> | array<string>")
+  assert.equal(Type.parse({ array: "string" }).format("base"), "array")
+})
+
+test("collects object refs from inside array applications", () => {
+  assert.deepEqual(Type.parse({ array: "object.user" }).objects, ["user"])
+  assert.deepEqual(new Set(Type.parse({ array: { "object.page": "object.user" } }).objects), new Set(["page", "user"]))
+  assert.deepEqual(new Set(Type.parse({ "object.page": { array: "object.user" } }).objects), new Set(["page", "user"]))
+  assert.deepEqual(Type.parse({ array: { array: "object.user" } }).objects, ["user"])
+})
+
+test("validates values against array applications", () => {
+  const strings = Type.parse({ array: "string" })
+  assert.equal(strings.valid(["a", "b"]), true)
+  assert.equal(strings.valid([]), true)
+  assert.equal(strings.valid([1]), false)
+  assert.equal(strings.valid("a"), false)
+  assert.equal(strings.valid(null), false)
+
+  const mixed = Type.parse({ array: ["string", "number"] })
+  assert.equal(mixed.valid(["a", 1]), true)
+  assert.equal(mixed.valid([true]), false)
+
+  const nested = Type.parse({ array: { array: "number" } })
+  assert.equal(nested.valid([[1], []]), true)
+  assert.equal(nested.valid([["a"]]), false)
+})
+
+test("a malformed array application resolves to any instead of throwing", () => {
+  for (const bad of [{ array: 5 }, { array: "string", "object.a": "string" }, { arrays: "string" }, { "array.x": "string" }, { Array: "string" }]) {
+    const t = Type.parse(bad)
+    assert.equal(t.toString(), "any", JSON.stringify(bad))
+    assert.equal(t.valid("anything"), true)
+  }
+})
+
+// Spec (Generics, Substitution): a union of one entry is that entry.
+test("a union of one entry is that entry", () => {
+  assert.equal(Type.parse(["string"]).format("base"), "string")
+  assert.equal(Type.parse(["string.email"]).format("compact"), "email")
+  assert.equal(Type.parse(["string.email"]).toString(), "string.email")
+  assert.equal(Type.parse(["T"]).format("base"), "any")
+  assert.equal(Type.parse([{ array: "string" }]).format("base"), "array")
+  assert.equal(Type.parse([{ "object.list": "object.user" }]).format("base"), "object")
+  // The legacy array shorthand is not a one-entry union: [["x"]] is still array<x>.
+  assert.equal(Type.parse([["string"]]).format("base"), "array")
+  assert.equal(Type.parse([["string"]]).toString(), "array<string>")
+  // Unions of more than one entry are unchanged.
+  assert.equal(Type.parse(["string", "null"]).format("base"), "union")
+  // An empty array has no entry to collapse to, and still doesn't throw.
+  assert.doesNotThrow(() => Type.parse([]).toString())
+})
